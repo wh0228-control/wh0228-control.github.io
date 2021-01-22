@@ -1,0 +1,168 @@
+---
+layout: post
+mathjax: true
+title: Getting Start with MPC
+date: 2021-01-21 19:20:23 +0900
+category: MPC
+---
+# Introdction
+이 챕터의 가장 중요한 목적은 model predictive control(MPC)의 가장 필수적인 요소들을 간결하고 이해하기 쉽게 제공하는 겁니다. deterministic, stochastic 모델과 regulation, state estimation, dynamic programming(DP), tracking, disturbance와 closed-loop stability, zero offset to disturbance와 같은 몇가지 중요한 성능적 특성을 소개하겠습니다. MPC와 linear system 이론을 기본 배경 지식으로 가지고 있는 독자는 이 포스트를 간단히 건너뛰어도 무방합니다.
+
+
+## Models and Modeling
+Model predictive control은 optimal control에 뿌리를 두고 있습니다. MPC의 기본 컨셉은 시스템의 행동을 forcast(예측)하기 위해 dynamic model을 사용하고, best decision을 만들기 위해 forcast를 optimize(최적화)합니다. 이때 제어는 실시간으로 이루어지죠. 그러므로 model은 MPC의 모든 형태의 중심에 존재합니다.
+
+dynamic system에서 optimal control(최적 제어)는 initial state(초기 상태)에 의존하여 움직이기 때문에, MPC의 두 번째 기본 컨셉은 시스템의 가장 비슷한 initial state를 결정하기 위하여 과거의 measurement(측정) 기록을 이용하는 겁니다. state estimation problem(상태 추정 문제)는 과거 데이터의 기록을 조사하고, 이러한 measurememt값을 model과 조정하여 현재 state일 가능성이 가장 높은 값을 결정하는 겁니다.
+
+optimal control action(최적 제어 동작)을 만들기 위해 model을 forcast하거나 optimal state estimate(최적 상태 추정)을 만들기 위해 과거 measurememt 기록을 사용하는 두 가지 regulation problem은 dynamic model과 optimization을 포함합니다.
+
+먼저 dynamic model에 대해 알아보겠습니다. 가장 친숙한 differential equation model(미분 방정식 모델)을 살펴보죠.
+
+$$
+		\frac{dx}{dt} = f(x, u, t) \\
+		y = h(x, u, t) \\
+		x(t_0)= x_0
+$$
+이때 $x \in \mathbb{R}^n$은 state이고, $u \in \mathbb{R}^m$은 input(입력)이며, $y \in \mathbb{R}^p$는 output(출력)이고, $t \in \mathbb{R}$는 time(시간)입니다. $\mathbb{R}^n$는 실수값들의 집합인 n-vector를 의미합니다. initial condition(초기 조건)은 time $t = t_0$에서의 state $x$를 지정하고, time이 $t_0$보다 클 때의 $(t \in \mathbb{R}_{\ge t_0})$ differential equation의 solution(해)를 찾는데 쓰입니다. initial time(초기 시간)을 0으로 정의하면 initial condition은 $t \in \mathbb{R}_{\ge 0}$과 같은 케이스가 됩니다.
+
+## Linear Dynamic Models
+
+### Time-varing models
+대부분의 일반적인 linear state space model(선형 상태 공간 모델)은 time-varying model(시변 모델)입니다.
+
+$$
+	\frac{dx}{dt} = A(t)x + B(t)u \\
+	y = C(t)x + D(t)u \\
+	x(0)= x_0
+$$
+
+$A(t) \in \mathbb{R}^{n \times n}$은 state transition matrix(상태 전이 행렬), $B(t) \in \mathbb{R}^{n \times m}$은 input matrix(입력 행렬), $C(t) \in \mathbb{R}^{p \times n}$는 output matrix(출력 행렬), $D(t) \in \mathbb{R}^{p \times m}$은 $u$와 $y$의 직접적인 coupling(결합)을 나타냅니다. 많은 application에서 $D = 0$으로 모델링됩니다.
+
+### Time-invariant models
+만약 $A, B, C, D$가 time invariant(시불변)이라면, linear model은 다음과 같습니다.
+> 1.1 Time-invariant Model
+
+$$
+	\frac{dx}{dt} = Ax + Bu \\
+	y = Cx + Du\\
+	x(0) = x_0
+$$
+
+linear model을 사용하여 physical system(물리적 시스템)을 근사화하는 주요 목적 중 하나는 solution을 구하기가 쉽고 linear model의 분석이 쉽기 때문입니다. Time-invariant model equation은 다음과 같은 식으로 풀 수 있습니다.
+> 1.2 Matrix Exponential
+
+$$
+x(t) = e^{At} x_0 + \int_{0}^{t}e^{A(t-\tau)}Bu(\tau)d\tau
+$$
+
+$e^{At} \in \mathbb{R}^{n \times n}$은 matrix exponential(지수 함수)입니다. 이는 Tayler series로 정의할 수 있습니다.
+
+$$
+e^X := \frac{1}{0!}I + \frac{1}{1!}x + \frac{1}{2!}x^2 + \frac{1}{3!}x^3 + \cdots
+$$
+
+이러한 series는 모든 $X$에 대해서 converge(수렴)합니다. 이 함수의 solution은 $At$의 matrix exponential로 weighted(가중)된 전체 $u(t)$의 behavior(동작)의 convolution integral(합성 곱)입니다.
+
+나중에 $A$의 eigenvalue(고유값)가 시간이 지남에 따라 현재의 state $x(t)$에 더 영향을 주는지, 아니면 적게 영향을 주는지를 결정함을 보겠습니다.
+
+## Input-Output Models
+system의 내부 구조를 잘 모를때, state variable을 알려고 하는 대신 조작 할 수 있는 input과 측정 가능한 output에만 집중하는 접근법이 편할 수 있습니다. Figure 1.1에서 볼 수 있다 싶이, system을 $u$와 $y$의 연결로 생각할 수 있습니다. 이러한 관점에서, 일반적으로 조작 가능한 $u$와 측정 가능한 $y$를 이용하여 linear model인 $G$를 알아내는 system identification experiment(식별 실험)을 할 수 있습니다.
+
+단순한 series(직렬) 및 feedback(피드백)으로 연결된 블록 다이어그램 system에 대해서는 time function을 이용하기 보다는 signal의 Laplace transform을 이용하는 것이 편리합니다.
+
+$$
+\bar{y}(s):=\int_{0}^{\infty}e^{-st}y(t)dt
+$$
+
+complex-value(복소수)인 Laplace transform variable $s \in \mathbb{C}$는 real-value(실수)인 time varible $t$와 대조적입니다. $:=$는 "equal by definition(정의에 의해 같다)." 또는 "is defined by(~에 의해 정의되다)."를 의미합니다.
+
+![alt text](/public/img/Fig1_1.png){: .center}
+
+Transfer function maxtrix(전달 함수 행렬)는 데이터에 의해 식별되며, 블록 다이어그램은 다음과 같은 input과 output 사이의 수학적 관계식에 의해 표현됩니다.
+
+$$
+\bar{y}(s) = G(s)\bar{u}(s)
+$$
+
+$G(s) \in \mathbb{C}^{p \times m}$는 transfer function matrix입니다. state가 위와 같은 input-output 표현식에서 나타나지 않는 것을 확인할 수 있습니다. state space model으로부터 $G(s)$를 구하고자 하면 $G(s) = C(sI - A)^{-1}B + D$ 식을 이용하고 initial condition을 $x(0) = 0$이라고 가정하여 얻을 수 있습니다.
+
+## Distributed Models
+Distributed model(분산 모델)은 spatially uniform(공간적으로 균일)하지 않은 system을 나타낼 때 사용합니다. 예를 들면, convection과 화학 반응을 일으키고 있는 화학 혼합물과 같은 system이 있습니다. 특정한 $A$의 미시적인 질량적 균형은 다음과 같은 식으로 나타납니다.
+
+$$
+\frac{\partial c_A}{\partial t} + \nabla \cdot (c_A v_A)  - R_A = 0
+$$
+
+$c_A$는 A의 molar(몰) 농도, $v_A$는 A의 반응 속도, $R_A$는 화학 반응에 의한 A의 생산 속도입니다. gradient는 다음과 같은 식을 의미합니다.
+
+$$
+\nabla := \delta_x \frac{\partial}{\partial x} + \delta_y \frac{\partial}{\partial y} + \delta_z \frac{\partial}{\partial z}
+$$
+
+그리고 $\delta_{x,y,z}$는 $(x,y,z)$ spatial coordinates(공간 좌표)상의 각각의 unit vector(단위 벡터)를 의미합니다.
+
+또한 분산 모델은 꼭 "공간적"일 필요는 없습니다. $f(r, t)dr$이 time $t$에서 입자 원자로 안에서 $r$에서 $r + dr$ 사이의 입자 수를 의미하는 particle size distribution(입자 크기 분포) $f(r,t)$를 생각해봅시다. 원자로의 부피는 잘 혼합되어 있고 공간적으로 균일한 것으로 가정합니다. 만약 입자들이 핵 분열률 $B(t)$로 zero size에서 핵분열하고 $G(t)$의 성장률로 증가한다면, 입자 크기 분포의 증가는 $A$에 의해서 주어집니다.
+
+$$
+\frac{\partial f}{\partial t} = -G\frac{\partial f}{\partial r} \\
+f(r, t) = B/G  \quad r=0 \quad t\ge 0 \\
+f(r, t) = f_0(r) \quad r\ge0 \quad t=0 \\
+$$
+
+입자 원자로가 잘 혼합되어 있고 공간적으로 균일하더라도 부분 미분 방정식 표현이 있음을 확인할 수 있습니다.
+
+## Discrete Time Models
+
+구하고자 하는 system이 discrete time에 의해 sampling되는 경우 discrete time model(이산 시간 모델)이 편리한 경우가 많습니다. sampling 속도를 적절하게 고른다면 sample 사이의 behavior를 안전하게 무시할 수 있으며 model에서는 sample time에 대한 behavior를 혼자서 설명할 수 있습니다.
+
+finite dimension(유한 차원), linear, time-invariant, discrete time model은 다음과 같습니다.
+> 1.3 Discrete Time Model
+
+$$
+x(k+1) = Ax(k) + Bu(k) \\
+y(k) = Cx(k) + Du(k) \\
+x(0) = x_0
+$$
+
+$k \in []_{\ge 0}$는 0이 아닌 정수 sample number를 나타내고, 이는 $t = k \Delta$과 같은 관계식으로 연결됩니다. $\Delta$은 sample time을 의미합니다. $[]$은 정수의 set(집합)을 의미하고 $[]_{\ge 0}$은 0이 아닌 정수들의 집합을 의미합니다. linear discrete time model은 linear difference equation입니다.
+
+다음과 같은 time index를 사용하여 표현하는 것이 더 편할때도 있습니다.
+
+$$
+x_{k+1} = Ax_k + Bu_k \\
+y_k = Cx_k + Du_k \\
+x_0  \ \textrm{given}
+$$
+
+하지만 이렇게 쓰면 다른 notation(표현법)과 헷갈릴 수도 있습니다. 따라서 (1.3)식을 다음과 같이 표현하는 곳도 많습니다.
+
+$$
+x^+ = Ax + Bu \\
+y = Cx + Du\\
+x(0) = x_0
+$$
+
+superscript $^+$는 다음 sample time의 state임을 의미합니다. linear discrete time model은 MPC의 아이디어와 개념을 설명하는데 가장 편리한, 가장 간단한 모델입니다.
+
+모델이 linear이기 때문에, analytical solution이 쉽게 구해집니다. (1.3)식의 solution은 다음과 같습니다.
+> 1.4 LTI DT solution
+
+$$
+x(k) = A^k x_0 + \sum_{j=0}^{k-1} A^{k-j-1}Bu(j)
+$$
+
+convolution sum(합성 합)은 식 (1.2)의 convolution integral에 해당하고 $A$의 power(거듭 제곱)은 matrix exponential을 의미합니다. 식 (1,4)가 곱과 합으로만 이루어진 식이기 때문에, computation을 위한 프로그램을 만드는 데 편합니다.
+
+continuous time(연속 시간) input-output 모델의 discrete time analog는 Z-transform을 정의하여 구합니다.
+
+$$
+\bar{y}(z) := \sum_{k=0}^{\infty}z^k y(k)
+$$
+
+discrete transfer function matrix $G(z)$는 다음과 같은 discrete input-output 모델을 표현합니다.
+
+$$
+\bar{y}(z) = G(z) \bar{u}(z)
+$$
+
+$G(z) \in \mathbb{C}^{p \times m}$은 transfer function matrix입니다. input-output 표현에서 state가 나타나지 않는 것을 확인할 수 있습니다.
