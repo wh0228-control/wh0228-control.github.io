@@ -94,7 +94,7 @@ analytics:
 # Site Author
 author:
   name             : "LCIS lab"
-  avatar           : "/assets/images/LCIS_photo.jpg"
+  avatar           : "/assets/images/LCIS_photo.png"
   bio              : "LCIS Inha Univ Lab"
   location         : "Incheon, Korea"
   email            :
